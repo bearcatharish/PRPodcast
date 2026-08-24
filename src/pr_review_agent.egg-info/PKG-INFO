@@ -1,3 +1,14 @@
+Metadata-Version: 2.4
+Name: pr-review-agent
+Version: 0.1.0
+Summary: Local PR review assistant that summarizes commits, risks, dependencies, and review hotspots
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: requests>=2.31.0
+Requires-Dist: Flask>=2.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+
 # PR Review Agent
 
 A local tool that inspects a Git repository (on your machine), summarizes the changes on the current branch compared to a base branch, highlights security signals and dependency changes, and produces a short, PR-ready report plus a concise podcast-style narration.

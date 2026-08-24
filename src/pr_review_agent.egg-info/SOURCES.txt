@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/pr_review_agent/__init__.py
+src/pr_review_agent/analyzer.py
+src/pr_review_agent/cli.py
+src/pr_review_agent/ollama_client.py
+src/pr_review_agent/web.py
+src/pr_review_agent.egg-info/PKG-INFO
+src/pr_review_agent.egg-info/SOURCES.txt
+src/pr_review_agent.egg-info/dependency_links.txt
+src/pr_review_agent.egg-info/entry_points.txt
+src/pr_review_agent.egg-info/requires.txt
+src/pr_review_agent.egg-info/top_level.txt
+tests/test_analyzer.py
