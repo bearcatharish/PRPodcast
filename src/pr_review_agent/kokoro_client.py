@@ -14,11 +14,18 @@ def _find_kokoro_root() -> Optional[Path]:
         if p.exists():
             return p
 
-    # Check common locations: sibling folder named kokoro, or installed package
-    here = Path(__file__).resolve().parent.parent
+    # Check common locations: src/kokoro or project-root/kokoro
+    here = Path(__file__).resolve().parent.parent  # -> src/
+    # candidate1: src/kokoro (used when kokoro is placed inside src)
     candidate = here / "kokoro"
     if candidate.exists():
         return candidate
+
+    # candidate2: project root / kokoro (project root is parent of src)
+    project_root = here.parent
+    candidate2 = project_root / "kokoro"
+    if candidate2.exists():
+        return candidate2
 
     # Not found locally
     return None
