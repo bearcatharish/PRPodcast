@@ -20,6 +20,7 @@ INDEX_HTML = """
   <label>Local repo path: <input name=repo size=60 value="{{ repo|default('') }}"></label><br>
   <label>Base branch: <input name=base value="{{ base|default('main') }}"></label><br>
   <label>Use local LLM (Ollama): <input type=checkbox name=use_llm {{ 'checked' if use_llm else '' }}></label><br>
+    <label>Use local Kokoro TTS: <input type=checkbox name=use_kokoro {{ 'checked' if use_kokoro else '' }}></label><br>
   <input type=submit value="Analyze">
 </form>
 {% if report %}
@@ -40,10 +41,12 @@ def index():
     repo = ''
     base = 'main'
     use_llm = False
+    use_kokoro = False
     if request.method == 'POST':
         repo = request.form.get('repo', '').strip()
         base = request.form.get('base', 'main').strip()
         use_llm = bool(request.form.get('use_llm'))
+        use_kokoro = bool(request.form.get('use_kokoro'))
         if not repo:
             report = 'Error: please provide a local repository path'
         else:
@@ -53,9 +56,18 @@ def index():
                     result = maybe_enrich_with_ollama(result)
                 report = build_pr_report(result)
                 podcast = result.get('podcast', '')
+                if use_kokoro and podcast:
+                    try:
+                        from pr_review_agent.kokoro_client import is_kokoro_available, synthesize
+                        if is_kokoro_available():
+                            out = Path(repo) / 'demo_voice_kokoro.wav'
+                            synthesize(podcast, out_path=out)
+                            report += f"\n\nKokoro audio generated at: {out}"
+                    except Exception as exc:
+                        report += f"\n\nKokoro synthesis failed: {exc}"
             except Exception as exc:
                 report = f'Analysis failed: {html.escape(str(exc))}'
-    return render_template_string(INDEX_HTML, report=report, repo=repo, base=base, use_llm=use_llm, podcast=podcast)
+    return render_template_string(INDEX_HTML, report=report, repo=repo, base=base, use_llm=use_llm, use_kokoro=use_kokoro, podcast=podcast)
 
 
 @app.route('/speak', methods=['POST'])

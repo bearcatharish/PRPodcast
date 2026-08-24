@@ -18,6 +18,7 @@ def main() -> None:
     parser.add_argument("--use-llm", action="store_true", help="Use a local Ollama model if it is running")
     parser.add_argument("--voice", default="Samantha", help="macOS text-to-speech voice name, such as Samantha")
     parser.add_argument("--speak", action="store_true", help="Read the short podcast summary aloud")
+    parser.add_argument("--use-kokoro", action="store_true", help="Use local Kokoro TTS to generate podcast audio")
     args = parser.parse_args()
 
     result = analyze_pr(args.repo, base_ref=args.base, use_llm=args.use_llm)
@@ -38,6 +39,22 @@ def main() -> None:
     if args.speak:
         import subprocess
         try:
+            if args.use_kokoro:
+                # Try Kokoro first if requested
+                from pr_review_agent.kokoro_client import is_kokoro_available, synthesize
+
+                if is_kokoro_available():
+                    out = "demo_voice_kokoro.wav"
+                    try:
+                        synthesize(result.get("podcast", ""), out_path=out)
+                        # play via afplay on macOS
+                        if subprocess.run(["which", "afplay"], capture_output=True).returncode == 0:
+                            subprocess.run(["afplay", out], check=False)
+                        print(f"Generated and played Kokoro audio: {out}")
+                        raise SystemExit(0)
+                    except Exception as exc:
+                        print(f"Kokoro synthesis failed: {exc}. Falling back to macOS say.")
+
             subprocess.run(["say", "-v", args.voice, result["podcast"]], check=False)
             print(f"Spoken with macOS voice: {args.voice}")
         except FileNotFoundError:

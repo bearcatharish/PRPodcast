@@ -112,3 +112,41 @@ python -m http.server --directory /tmp 8001
 ---
 
 If you'd like, I can also add a one-click GitHub pull-request comment formatter (single-paragraph) or commit a small web UI template to this repo now.
+
+## Kokoro TTS (optional)
+
+This repository includes optional integration with Kokoro, an open-weight TTS model (82M parameters) that can run locally and offline. Kokoro is Apache-2.0 licensed.
+
+Important notes:
+- Kokoro and some of its language-specific dependencies require Python 3.10 or newer. If your project's venv uses Python 3.9, create a separate venv for Kokoro.
+- The project contains a thin wrapper `src/pr_review_agent/kokoro_client.py` and CLI/web flags to use Kokoro when available (`--use-kokoro` and a checkbox in the web UI). The wrapper looks for a `kokoro/` checkout next to this project or an explicit `KOKORO_PATH` environment variable.
+
+Quick setup (recommended in a separate Python 3.10+ environment):
+
+```bash
+# create a venv with Python 3.10+
+python3.10 -m venv .kokoro-venv
+source .kokoro-venv/bin/activate
+
+# install kokoro and audio dependencies
+pip install --upgrade pip
+pip install kokoro soundfile
+# optional: English phonemization support
+pip install misaki[en]
+```
+
+If you prefer, you can clone the Kokoro GitHub repo next to this project and set `KOKORO_PATH`:
+
+```bash
+git clone https://github.com/hexgrad/kokoro.git ../kokoro
+export KOKORO_PATH="$(pwd)/../kokoro"
+```
+
+Generate audio via the CLI (if Kokoro is installed and available):
+
+```bash
+python -m pr_review_agent.cli --repo /path/to/repo --speak --use-kokoro
+```
+
+If Kokoro is not available, the tool falls back to the macOS `say` TTS command for local demo audio.
+
