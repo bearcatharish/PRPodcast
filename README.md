@@ -1,152 +1,183 @@
 # PR Review Agent
 
-A local tool that inspects a Git repository (on your machine), summarizes the changes on the current branch compared to a base branch, highlights security signals and dependency changes, and produces a short, PR-ready report plus a concise podcast-style narration.
+PR Review Agent is a local Python tool that reviews the changes on a Git branch. It compares `HEAD` with a base branch, identifies review hotspots, scans for common security signals and dependency changes, and produces a JSON report, a Markdown snapshot, and a short podcast-style summary.
 
-This repository contains a small CLI and a minimal local web UI you can run on a machine to select a repository path and generate the report.
+It runs entirely on your machine. The default analyzer does not require a cloud API or an LLM.
 
-## Where the project sits locally
+## Features
 
-- Code and CLI: `src/pr_review_agent`
-- Generated reports (examples): `pr_review_report.md`, `pr_review_report.json`
+- Compares a checked-out branch with a configurable base branch.
+- Summarizes recent commit messages and changed files.
+- Classifies review areas such as backend, UI, database, pipeline, testing, and general maintenance.
+- Detects dependency names in common Python and JavaScript configuration files.
+- Scans changed files for security-sensitive patterns that need human review.
+- Writes JSON and Markdown reports.
+- Optionally enriches the summary with a local Ollama model.
+- Optionally reads the podcast summary with macOS `say`.
+- Includes experimental Kokoro TTS support for local audio generation.
+- Provides both a command-line interface and a local Flask web UI.
 
-## Important libraries
+## Repository layout
 
-- `requests` — used by the optional local LLM integration client
-- `Flask` — small web UI to run the analyzer from a browser (optional)
-- `pytest` — test suite
+```text
+src/pr_review_agent/   Application package, CLI, web UI, and integrations
+tests/                 Pytest tests
+pyproject.toml         Package metadata and dependencies
+kokoro/                Optional Kokoro checkout referenced as a Git submodule
+.gitignore             Local environments, caches, reports, and audio exclusions
+```
 
-All dependencies are listed in `pyproject.toml`.
+Generated reports and audio are intentionally not stored in Git. The optional Kokoro model and Python environments should also remain local.
 
-## Optional local LLMs
+## Requirements
 
-The project can optionally enrich summaries using a local Ollama model. Supported example:
+- Python 3.9 or newer for the main project.
+- Git, because the analyzer reads branch history and diffs.
+- macOS `say` only if you want spoken output through the default voice path.
+- Python 3.10 or newer for the optional Kokoro integration.
+- Ollama and the `llama3.1:8b` model only if you want local LLM enrichment.
 
-- `llama3.1:8b`
+## Run locally
 
-To prepare Ollama:
+From the repository root:
 
 ```bash
-# start the Ollama server (if installed)
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+Run the test suite:
+
+```bash
+pytest
+```
+
+The expected result is the analyzer test passing without requiring Ollama, Kokoro, or generated audio files.
+
+## CLI usage
+
+The target repository must already be a Git repository, and the branch to review must be checked out:
+
+```bash
+cd /path/to/repository-to-review
+git status
+git branch --show-current
+```
+
+From the PR Review Agent repository, generate both report formats:
+
+```bash
+pr-review-agent \
+	--repo /path/to/repository-to-review \
+	--base main \
+	--output /tmp/pr_review_report.json \
+	--markdown-output /tmp/pr_review_report.md
+```
+
+The CLI compares the target repository's `HEAD` with `main` by default. Use another branch with `--base release` or a different base ref.
+
+### CLI options
+
+| Option | Purpose |
+| --- | --- |
+| `--repo PATH` | Required path to the repository being reviewed |
+| `--base REF` | Base branch or ref; defaults to `main` |
+| `--output PATH` | JSON output path; defaults to `pr_review_report.json` |
+| `--markdown-output PATH` | Markdown output path; defaults to `pr_review_report.md` |
+| `--use-llm` | Ask the local Ollama service to enrich the result |
+| `--speak` | Read the podcast summary aloud |
+| `--voice NAME` | macOS voice name; defaults to `Samantha` |
+| `--use-kokoro` | Try Kokoro audio first, then fall back to macOS `say` |
+
+Example with spoken output:
+
+```bash
+pr-review-agent --repo /path/to/repository-to-review --base main --speak --voice Samantha
+```
+
+## Local web UI
+
+Start the Flask interface from the project root while the virtual environment is active:
+
+```bash
+python -m pr_review_agent.web --host 127.0.0.1 --port 8000
+```
+
+Open <http://127.0.0.1:8000>, enter the target repository path and base branch, then choose whether to use Ollama or Kokoro. The page renders the Markdown snapshot and can invoke server-side macOS speech.
+
+The server binds to localhost by default. Keep it local: the form accepts filesystem paths and runs Git analysis against paths supplied by the user.
+
+Use another port if `8000` is busy:
+
+```bash
+python -m pr_review_agent.web --host 127.0.0.1 --port 8001
+```
+
+## Optional Ollama enrichment
+
+The normal analyzer uses built-in heuristics. To enable local LLM enrichment, install and start Ollama, then download the model used by the client:
+
+```bash
 ollama serve
-# download a model
 ollama pull llama3.1:8b
 ```
 
-If Ollama is not available the analyzer still runs with the built-in heuristics.
+Run the CLI with `--use-llm` or select the Ollama option in the web UI. The application continues with its normal local summary when Ollama is unavailable or the model is not installed. The client connects to `http://localhost:11434/api/generate`.
 
-## Quick install
+## Optional Kokoro TTS
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e '.[dev]'
-```
+Kokoro is an Apache-2.0 licensed, open-weight 82M-parameter TTS model. This repository keeps Kokoro separate from the main Python environment because it requires Python 3.10 or newer and heavyweight ML dependencies.
 
-## Run the CLI
+The integration in `src/pr_review_agent/kokoro_client.py` looks for:
 
-Generate a PR-style report for a local repository (must already be a git repo with the branch checked out):
+1. The directory named by `KOKORO_PATH`.
+2. A `kokoro/` directory inside `src/`.
+3. The project-root `kokoro/` checkout.
 
-```bash
-pr-review-agent --repo /path/to/local/repo --base main --output pr_review_report.json --markdown-output pr_review_report.md
-```
+The checkout must provide `samples/synthesize.py` for the wrapper to report itself as available. If it is unavailable, `--use-kokoro` falls back to macOS `say`.
 
-Notes:
-- Make sure you run this while the branch you want analyzed is the currently checked-out branch inside `/path/to/local/repo` (use `git status` / `git branch`).
-- The tool compares `HEAD` against `--base` (default `main`).
-
-## Run the local web UI (select repo and branch via browser)
-
-The project includes a small Flask app that exposes a form where you can enter a local repo path and base branch. Start it like this:
+For a separate Kokoro environment:
 
 ```bash
-# from project root
-source .venv/bin/activate
-python -m pr_review_agent.web --host 127.0.0.1 --port 8000
-# open http://127.0.0.1:8000 in your browser
-```
-
-The UI will:
-- accept a local filesystem path to the repository
-- accept a base branch to compare against (default `main`)
-- run the analyzer and render the short PR snapshot
-- provide a server-side "Speak" action that invokes the macOS `say` TTS (if available) to read the short podcast text
-
-Security note: the web UI runs locally only and executes analysis on paths you provide. Do not expose this service to untrusted networks.
-
-## How the analyzer works (short)
-
-1. Collects changed files between `HEAD` and the base branch.
-2. Summarizes recent commit messages for context.
-3. Scans changed files for known security patterns and dependency changes.
-4. Classifies hotspots (UI, backend, database, pipeline).
-5. Produces a short PR-ready markdown and a one-paragraph podcast-style summary.
-
-## Branch and podcast checklist
-
-1. Ensure the local repo has the branch you want to analyze checked out:
-
-```bash
-cd /path/to/local/repo
-git checkout feature/your-branch
-git status
-```
-
-2. Run the analyzer (CLI or web UI) while on that branch — the tool reads `HEAD` and compares to `--base`.
-
-3. If you want the podcast narration, either use the `--speak` flag for the CLI (macOS `say`) or use the web UI and click the `Speak` action.
-
-## Example: run from CLI and serve the markdown file locally
-
-```bash
-pr-review-agent --repo /Users/me/projects/myrepo --base main --markdown-output /tmp/my_pr.md
-python -m http.server --directory /tmp 8001
-# open http://127.0.0.1:8001/my_pr.md
-```
-
-## Troubleshooting & tips
-
-- If the tool finds no changed files, ensure your working tree has commits on the feature branch.
-- If Ollama calls fail, check `http://localhost:11434` and that the model is pulled.
-- To change the spoken voice on macOS, use `--voice Samantha` or another installed voice.
-
----
-
-If you'd like, I can also add a one-click GitHub pull-request comment formatter (single-paragraph) or commit a small web UI template to this repo now.
-
-## Kokoro TTS (optional)
-
-This repository includes optional integration with Kokoro, an open-weight TTS model (82M parameters) that can run locally and offline. Kokoro is Apache-2.0 licensed.
-
-Important notes:
-- Kokoro and some of its language-specific dependencies require Python 3.10 or newer. If your project's venv uses Python 3.9, create a separate venv for Kokoro.
-- The project contains a thin wrapper `src/pr_review_agent/kokoro_client.py` and CLI/web flags to use Kokoro when available (`--use-kokoro` and a checkbox in the web UI). The wrapper looks for a `kokoro/` checkout next to this project or an explicit `KOKORO_PATH` environment variable.
-
-Quick setup (recommended in a separate Python 3.10+ environment):
-
-```bash
-# create a venv with Python 3.10+
 python3.10 -m venv .kokoro-venv
 source .kokoro-venv/bin/activate
-
-# install kokoro and audio dependencies
-pip install --upgrade pip
-pip install kokoro soundfile
-# optional: English phonemization support
-pip install misaki[en]
+python -m pip install --upgrade pip
+python -m pip install kokoro soundfile
+python -m pip install "misaki[en]"
 ```
 
-If you prefer, you can clone the Kokoro GitHub repo next to this project and set `KOKORO_PATH`:
+Then point the integration at a compatible checkout if needed:
 
 ```bash
-git clone https://github.com/hexgrad/kokoro.git ../kokoro
-export KOKORO_PATH="$(pwd)/../kokoro"
+export KOKORO_PATH=/path/to/kokoro
+pr-review-agent --repo /path/to/repository-to-review --speak --use-kokoro
 ```
 
-Generate audio via the CLI (if Kokoro is installed and available):
+Kokoro audio is written as a local `demo_voice_kokoro.wav` file and is ignored by Git.
 
-```bash
-python -m pr_review_agent.cli --repo /path/to/repo --speak --use-kokoro
-```
+## How analysis works
 
-If Kokoro is not available, the tool falls back to the macOS `say` TTS command for local demo audio.
+1. Read changed paths from the target repository's Git diff.
+2. Fall back to a recent file sample when no diff is available.
+3. Summarize up to the three latest relevant commit messages.
+4. Detect dependency names and classify review areas.
+5. Scan changed text for known security-sensitive patterns.
+6. Build the JSON result, Markdown snapshot, and podcast text.
+
+The security scan is a review aid, not a replacement for a security audit. Detected patterns are signals for human inspection and may include false positives.
+
+## Troubleshooting
+
+- **No changed files:** Confirm the target branch has commits beyond the selected base and that the base ref exists locally.
+- **Base ref error:** Fetch the target repository's branches or pass an existing ref with `--base`.
+- **Ollama unavailable:** Start Ollama and verify `ollama pull llama3.1:8b`; analysis still works without it.
+- **Speech unavailable:** `--speak` requires macOS `say`; omit it to generate reports without audio.
+- **Kokoro unavailable:** Check `KOKORO_PATH`, Python 3.10+, dependencies, and the required `samples/synthesize.py` script.
+- **Port in use:** Start the web UI with another port, such as `--port 8001`.
+
+## Development
+
+Install the editable development package with `python -m pip install -e ".[dev]"`, run `pytest`, and keep local environments, caches, generated reports, audio, and model files out of commits. The `kokoro/` directory is an optional nested repository and should not be replaced with a copied model checkout.
 
